@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 import sys
+import copy
 
 import simplejson as json
-
 from pyramid import httpexceptions as exc
 from pyramid.response import Response
 
@@ -79,5 +79,23 @@ def extract_request_data(request):
             body = {}
     else:
         body = {}
-
-    return request.GET, request.headers, body, request.matchdict
+    # hack to allow query_strings with multiple parameters of the same name
+    if request.GET:
+        get_tmp = {}
+        try:
+            get_tmp = request.GET.copy()
+            # append equal parameters to a list
+            for key, value in request.GET.items():
+                value_tmp = get_tmp[key]
+                if value_tmp != value:
+                    if not isinstance(value_tmp, list):
+                        get_tmp[key] = [value_tmp]
+                    get_tmp[key].append(value)
+            # json serialize values
+            for i in get_tmp:
+                value = get_tmp[i]
+                get_tmp[i] = json.dumps(value)
+        except (ValueError, json.scanner.JSONDecodeError) as e:
+            request.errors.add('querystring', None, e.message)
+        request.GET.update(get_tmp)
+    return  request.GET, request.headers, body, request.matchdict

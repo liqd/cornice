@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+import simplejson as json
 from cornice.util import to_list, extract_request_data
 
 
@@ -89,8 +90,25 @@ def validate_colander_schema(schema, request):
                     if not attr.name in data:
                         deserialized = attr.deserialize()
                     else:
-                        deserialized = attr.deserialize(data[attr.name])
-                except Invalid as e:
+                        try:
+                            deserialized = attr.deserialize(data[attr.name])
+                        # hack to allow query_strings with multiple parameters of the same name
+                        except (Invalid) as e:
+                            # assume the value is serialized json
+                            try:
+                                deserialized = attr.deserialize(json.loads(data[attr.name]))
+                            except (Invalid) as e:
+                                # assume the value should be list
+                                error_message = str(e.messages())
+                                value =  json.loads(data[attr.name])
+                                if  "not iterable" in error_message and value:
+                                    list_value = list()
+                                    list_value.append(value)
+                                    deserialized = attr.deserialize(list_value)
+                                else:
+                                    # give up
+                                    raise(e)
+                except (Invalid) as e:
                     # the struct is invalid
                     try:
                         request.errors.add(location, attr.name,
